@@ -11,3 +11,4 @@ dist/
 # Logs & OS cruft
 *.log
 .DS_Store
+server.log
