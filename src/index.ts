@@ -36,8 +36,13 @@ function middlewareMetricsInc(
 }
 
 function handlerMetrics(_req: Request, res: Response) {
-  res.set("Content-Type", "text/plain; charset=utf-8");
-  res.send(`Hits: ${config.fileserverHits}`);
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.send(`<html>
+  <body>
+    <h1>Welcome, Chirpy Admin</h1>
+    <p>Chirpy has been visited ${config.fileserverHits} times!</p>
+  </body>
+</html>`);
 }
 
 function handlerReset(_req: Request, res: Response) {
@@ -49,9 +54,9 @@ function handlerReset(_req: Request, res: Response) {
 // register logger globally so it captures all routes (including 404s)
 app.use(middlewareLogResponses);
 
-app.get("/healthz", handlerReadiness);
-app.get("/metrics", handlerMetrics);
-app.get("/reset", handlerReset);
+app.get("/api/healthz", handlerReadiness);
+app.get("/admin/metrics", handlerMetrics);
+app.post("/admin/reset", handlerReset);
 
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
 
