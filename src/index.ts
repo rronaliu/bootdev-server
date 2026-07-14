@@ -1,5 +1,12 @@
 import express, { NextFunction, Request, Response } from "express";
+import postgres from "postgres";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { config } from "./config.js";
+
+const migrationClient = postgres(config.db.url, { max: 1 });
+await migrate(drizzle(migrationClient), config.db.migrationConfig);
+
 const app = express();
 const PORT = 3000;
 
@@ -80,7 +87,7 @@ function middlewareMetricsInc(
   _res: Response,
   next: NextFunction
 ): void {
-  config.fileserverHits += 1;
+  config.api.fileserverHits += 1;
   next();
 }
 
@@ -89,15 +96,26 @@ function handlerMetrics(_req: Request, res: Response) {
   res.send(`<html>
   <body>
     <h1>Welcome, Chirpy Admin</h1>
-    <p>Chirpy has been visited ${config.fileserverHits} times!</p>
+    <p>Chirpy has been visited ${config.api.fileserverHits} times!</p>
   </body>
 </html>`);
 }
 
-function handlerReset(_req: Request, res: Response) {
-  config.fileserverHits = 0;
-  res.set("Content-Type", "text/plain; charset=utf-8");
-  res.send(`Hits: ${config.fileserverHits}`);
+async function handlerReset(_req: Request, res: Response, next: NextFunction) {
+  try {
+    if (config.api.platform !== "dev") {
+      throw new ForbiddenError("Reset is only allowed in the dev environment.");
+    }
+
+    const { deleteAllUsers } = await import("./db/queries/users.js");
+    await deleteAllUsers();
+    config.api.fileserverHits = 0;
+
+    res.set("Content-Type", "text/plain; charset=utf-8");
+    res.send("Reset successful: all users deleted and hits set to 0");
+  } catch (err) {
+    next(err);
+  }
 }
 
 function editOutProfaneWords(chirp: string): string {
@@ -142,6 +160,36 @@ async function handlerValidateChirp(req: Request, res: Response, next: NextFunct
   });
 }
 
+async function handlerCreateUser(req: Request, res: Response, next: NextFunction) {
+  let body = "";
+
+  req.on("data", (chunk) => {
+    body += chunk;
+  });
+
+  req.on("end", async () => {
+    try {
+      const parsedBody = JSON.parse(body);
+
+      if (
+        parsedBody &&
+        typeof parsedBody === "object" &&
+        typeof parsedBody.email === "string"
+      ) {
+        const { createUser } = await import("./db/queries/users.js");
+        const newUser = await createUser({ email: parsedBody.email });
+        res.set("Content-Type", "application/json; charset=utf-8");
+        res.status(201).json(newUser);
+        return;
+      }
+
+      throw new BadRequestError("Invalid request body. Expected an object with an 'email' property.");
+    } catch (err) {
+      next(err);
+    }
+  });
+}
+
 // register logger globally so it captures all routes (including 404s)
 app.use(middlewareLogResponses);
 
@@ -149,6 +197,7 @@ app.get("/api/healthz", handlerReadiness);
 app.get("/admin/metrics", handlerMetrics);
 app.post("/admin/reset", handlerReset);
 app.post("/api/validate_chirp", handlerValidateChirp);
+app.post('/api/users', handlerCreateUser);
 
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
 
