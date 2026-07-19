@@ -186,6 +186,20 @@ async function handlerCreateChirp(
   });
 }
 
+async function handlerGetChirps(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const { getAllChirps } = await import("./db/queries/chirps.js");
+    const chirps = await getAllChirps();
+    res.status(200).json(chirps);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function handlerCreateUser(
   req: Request,
   res: Response,
@@ -230,6 +244,7 @@ app.get("/admin/metrics", handlerMetrics);
 app.post("/admin/reset", handlerReset);
 app.post("/api/users", handlerCreateUser);
 app.post("/api/chirps", handlerCreateChirp);
+app.get("/api/chirps", handlerGetChirps);
 
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
 
