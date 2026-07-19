@@ -1,6 +1,13 @@
 import type { MigrationConfig } from "drizzle-orm/migrator";
+import fs from "fs";
 
-process.loadEnvFile();
+if (fs.existsSync(".env")) {
+  try {
+    process.loadEnvFile();
+  } catch {
+    // ignore if loading fails
+  }
+}
 
 type APIConfig = {
   fileserverHits: number;
@@ -18,16 +25,16 @@ type Config = {
 };
 
 const migrationConfig: MigrationConfig = {
-  migrationsFolder: "./src/migrations",
+  migrationsFolder: "./src/migrations"
 };
 
 export const config: Config = {
   api: {
     fileserverHits: 0,
-    platform: process.env.PLATFORM!,
+    platform: process.env.PLATFORM!
   },
   db: {
     url: process.env.DB_URL!,
-    migrationConfig,
-  },
+    migrationConfig
+  }
 };

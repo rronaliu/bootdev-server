@@ -4,11 +4,22 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { config } from "./config.js";
 
-const migrationClient = postgres(config.db.url, { max: 1 });
-await migrate(drizzle(migrationClient), config.db.migrationConfig);
+try {
+  if (config.db.url) {
+    const migrationClient = postgres(config.db.url, { max: 1 });
+    await migrate(drizzle(migrationClient), config.db.migrationConfig);
+  } else {
+    console.warn("DB_URL not set; skipping migrations");
+  }
+} catch (err) {
+  console.warn(
+    "Database unavailable — skipping migrations:",
+    (err as any)?.message ?? String(err)
+  );
+}
 
 const app = express();
-const PORT = 3000;
+const PORT = 8080;
 
 // log after response finishes so we can include status and mark non-OK
 
@@ -65,7 +76,7 @@ function errorHandler(
   err: Error,
   _req: Request,
   res: Response,
-  _next: NextFunction,
+  _next: NextFunction
 ) {
   if (err instanceof BadRequestError) {
     res.status(400).json({ error: err.message });
@@ -80,7 +91,6 @@ function errorHandler(
     res.status(500).json({ error: "Something went wrong on our end" });
   }
 }
-
 
 function middlewareMetricsInc(
   _req: Request,
@@ -130,40 +140,60 @@ function editOutProfaneWords(chirp: string): string {
   return editedChirp;
 }
 
-async function handlerValidateChirp(req: Request, res: Response, next: NextFunction) {
+async function handlerCreateChirp(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   let body = "";
 
-  req.on("data", (chunk) => {
+  req.on("data", chunk => {
     body += chunk;
   });
 
-  req.on("end", () => {
+  req.on("end", async () => {
     try {
       const parsedBody = JSON.parse(body);
 
       if (
-        parsedBody &&
-        typeof parsedBody === "object" &&
-        typeof parsedBody.body === "string" &&
-        parsedBody.body.length <= 140
+        !parsedBody ||
+        typeof parsedBody !== "object" ||
+        typeof parsedBody.body !== "string" ||
+        parsedBody.body.length > 140
       ) {
-        const editedChirp = editOutProfaneWords(parsedBody.body);
-        res.set("Content-Type", "application/json; charset=utf-8");
-        res.status(200).json({ cleanedBody: editedChirp });
-        return;
+        throw new BadRequestError("Chirp is too long. Max length is 140");
       }
 
-      throw new BadRequestError("Chirp is too long. Max length is 140");
+      if (!parsedBody.userId || typeof parsedBody.userId !== "string") {
+        throw new BadRequestError(
+          "Missing or invalid 'userId' in request body."
+        );
+      }
+
+      const editedChirp = editOutProfaneWords(parsedBody.body);
+
+      const { createChirp } = await import("./db/queries/chirps.js");
+      const saved = await createChirp({
+        body: editedChirp,
+        userId: parsedBody.userId
+      });
+
+      res.set("Content-Type", "application/json; charset=utf-8");
+      res.status(201).json(saved);
     } catch (err) {
       next(err);
     }
   });
 }
 
-async function handlerCreateUser(req: Request, res: Response, next: NextFunction) {
+async function handlerCreateUser(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   let body = "";
 
-  req.on("data", (chunk) => {
+  req.on("data", chunk => {
     body += chunk;
   });
 
@@ -183,7 +213,9 @@ async function handlerCreateUser(req: Request, res: Response, next: NextFunction
         return;
       }
 
-      throw new BadRequestError("Invalid request body. Expected an object with an 'email' property.");
+      throw new BadRequestError(
+        "Invalid request body. Expected an object with an 'email' property."
+      );
     } catch (err) {
       next(err);
     }
@@ -196,8 +228,8 @@ app.use(middlewareLogResponses);
 app.get("/api/healthz", handlerReadiness);
 app.get("/admin/metrics", handlerMetrics);
 app.post("/admin/reset", handlerReset);
-app.post("/api/validate_chirp", handlerValidateChirp);
-app.post('/api/users', handlerCreateUser);
+app.post("/api/users", handlerCreateUser);
+app.post("/api/chirps", handlerCreateChirp);
 
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
 
