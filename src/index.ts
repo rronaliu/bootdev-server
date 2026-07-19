@@ -200,6 +200,24 @@ async function handlerGetChirps(
   }
 }
 
+async function handlerGetChirpById(
+  req: Request<{ id: string }>,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const { getChirpById } = await import("./db/queries/chirps.js");
+    const chirp = await getChirpById(req.params.id);
+    if (!chirp) {
+      throw new NotFoundError("Chirp not found");
+    }
+
+    res.status(200).json(chirp);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function handlerCreateUser(
   req: Request,
   res: Response,
@@ -245,6 +263,7 @@ app.post("/admin/reset", handlerReset);
 app.post("/api/users", handlerCreateUser);
 app.post("/api/chirps", handlerCreateChirp);
 app.get("/api/chirps", handlerGetChirps);
+app.get("/api/chirps/:id", handlerGetChirpById);
 
 app.use("/app", middlewareMetricsInc, express.static("./src/app"));
 
